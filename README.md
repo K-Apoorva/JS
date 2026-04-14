@@ -45,6 +45,7 @@ Bison validates grammar and builds an implicit AST:
 
 ```bash
 make        # compile
+make clean  # clean the generated files
 make run    # run on input.js
 make clean  # remove generated files
 ```
