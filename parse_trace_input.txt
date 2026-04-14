@@ -1,0 +1,358 @@
+╔══════════════════════════════════════════════════════╗
+║         JS → TS Compiler  (Lex + Bison)              ║
+║   Phases: Lexical | Syntax | Semantic | CodeGen      ║
+╚══════════════════════════════════════════════════════╝
+
+── PHASE 1: Lexical Analysis ──────────────────────────
+  Tokenizing input stream...
+
+── PHASE 2: Syntax Analysis  (Productions + Parse Tree)
+  [Production]  param_list  →  IDENTIFIER , IDENTIFIER
+├─ ParamList
+  └─ param: "users"
+  └─ param: "userData"
+  [Production]  if_cond  →  ! IDENTIFIER.IDENTIFIER || ! IDENTIFIER.IDENTIFIER
+  [Production]  throw_stmt  →  throw new IDENTIFIER ( STRING_LIT )
+├─ ThrowStatement
+  └─ message: ""Invalid input""
+  [Production]  if_stmt  →  if ( if_cond ) { throw_stmt }
+├─ IfStatement
+  └─ condition: "!x.y || !x.z"
+  [Production]  func_stmt  →  if_stmt
+  [Production]  func_body  →  func_stmt
+  [Production]  expr  →  IDENTIFIER.IDENTIFIER === IDENTIFIER.IDENTIFIER
+  [Production]  arrow_func  →  IDENTIFIER => expr
+├─ ArrowFunction
+  └─ param: "u"
+  [Production]  expr  →  IDENTIFIER.IDENTIFIER ( arrow_func )
+├─ CallExpression
+  └─ callee: "users"
+  └─ method: "find"
+  [Production]  const_decl  →  const IDENTIFIER = expr
+├─ VariableDeclaration (const)
+  └─ name: "existingUser"
+  └─ init: "expr"
+  [Production]  func_stmt  →  const_decl
+  [Production]  func_body  →  func_body func_stmt
+  [Production]  throw_stmt  →  throw new IDENTIFIER ( STRING_LIT )
+├─ ThrowStatement
+  └─ message: ""User already exists""
+  [Production]  if_stmt  →  if ( IDENTIFIER ) { throw_stmt }
+├─ IfStatement
+  └─ condition: "existingUser"
+  [Production]  func_stmt  →  if_stmt
+  [Production]  func_body  →  func_body func_stmt
+  [Production]  expr  →  IDENTIFIER.IDENTIFIER ()
+  [Production]  prop  →  IDENTIFIER : expr
+  [Semantic]  Property id             : inferred
+  [Production]  prop_list  →  prop
+  [Production]  expr  →  IDENTIFIER.IDENTIFIER
+  [Production]  prop  →  IDENTIFIER : expr
+  [Semantic]  Property email          : inferred
+  [Production]  prop_list  →  prop_list , prop
+  [Production]  expr  →  IDENTIFIER.IDENTIFIER
+  [Production]  prop  →  IDENTIFIER : expr
+  [Semantic]  Property password       : inferred
+  [Production]  prop_list  →  prop_list , prop
+  [Production]  prop  →  IDENTIFIER : true
+  [Semantic]  Property isActive       : boolean
+  [Production]  prop_list  →  prop_list , prop
+  [Production]  object_literal  →  { prop_list }
+  [Production]  const_decl  →  const IDENTIFIER = object_literal
+├─ VariableDeclaration (const)
+  └─ name: "newUser"
+  └─ init: "ObjectLiteral"
+  [Production]  func_stmt  →  const_decl
+  [Production]  func_body  →  func_body func_stmt
+  [Production]  expr  →  IDENTIFIER.IDENTIFIER ( IDENTIFIER )
+├─ CallExpression
+  └─ callee: "users"
+  └─ method: "push"
+  └─ arg: "newUser"
+  [Production]  expr_stmt  →  expr ;
+  [Production]  func_stmt  →  expr_stmt
+  [Production]  func_body  →  func_body func_stmt
+  [Production]  return_stmt  →  return IDENTIFIER
+├─ ReturnStatement
+  └─ value: "newUser"
+  [Production]  func_stmt  →  return_stmt
+  [Production]  func_body  →  func_body func_stmt
+  [Production]  async_func_decl  →  async function IDENTIFIER ( param_list ) { func_body }
+├─ AsyncFunctionDeclaration
+  └─ name: "registerUser"
+  [Production]  stmt  →  async_func_decl
+  [Production]  stmt_list  →  stmt
+  [Production]  var_decl  →  let IDENTIFIER = []
+├─ VariableDeclaration (let)
+  └─ name: "users"
+  └─ init: "[]"
+  [Production]  stmt  →  var_decl
+  [Production]  stmt_list  →  stmt_list stmt
+  [Production]  prop  →  IDENTIFIER : STRING_LIT
+  [Semantic]  Property email          : string
+  [Production]  prop_list  →  prop
+  [Production]  prop  →  IDENTIFIER : STRING_LIT
+  [Semantic]  Property password       : string
+  [Production]  prop_list  →  prop_list , prop
+  [Production]  object_literal  →  { prop_list }
+  [Production]  expr  →  IDENTIFIER.IDENTIFIER ( STRING_LIT, IDENTIFIER.IDENTIFIER )
+  [Production]  expr_stmt  →  expr ;
+  [Production]  func_stmt  →  expr_stmt
+  [Production]  func_body  →  func_stmt
+  [Production]  arrow_func  →  IDENTIFIER => { func_body }
+├─ ArrowFunction (block)
+  └─ param: "user"
+  [Production]  expr  →  IDENTIFIER ( IDENTIFIER, object_literal ).IDENTIFIER( arrow_func )
+├─ CallExpression (.then())
+  └─ callee: "registerUser"
+  [Production]  expr_stmt  →  expr ;
+  [Production]  stmt  →  expr_stmt
+  [Production]  stmt_list  →  stmt_list stmt
+  [Production]  program  →  stmt_list
+
+╔══════════════════════════════════════════════════════╗
+║           PARSING METHOD: LALR(1)                    ║
+╠══════════════════════════════════════════════════════╣
+║  Algorithm : LALR(1)  (Look-Ahead LR, 1 token)       ║
+║  Generator : GNU Bison                               ║
+║  Strategy  : Bottom-up, shift-reduce                 ║
+║  Lookahead : 1 token  (decides shift vs reduce)      ║
+╠══════════════════════════════════════════════════════╣
+║  How it works:                                        ║
+║  • SHIFT  – push next token onto the parse stack      ║
+║  • REDUCE – pop RHS symbols, push LHS non-terminal   ║
+║  • ACCEPT – stack holds start symbol, input is done  ║
+║  • 1 lookahead token resolves shift/reduce conflicts  ║
+╚══════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════╗
+║           LALR(1) ACTION TRACE                       ║
+╠══════╦══════════╦═══════════════════════════════════╣
+║ Step ║ Action   ║ Detail                            ║
+╠══════╬══════════╬═══════════════════════════════════╣
+║    1 ║ SHIFT  ║ async                             ║
+║    2 ║ SHIFT  ║ function                          ║
+║    3 ║ SHIFT  ║ registerUser                      ║
+║    4 ║ SHIFT  ║ (                                 ║
+║    5 ║ SHIFT  ║ users                             ║
+║    6 ║ SHIFT  ║ ,                                 ║
+║    7 ║ SHIFT  ║ userData                          ║
+║    8 ║ REDUCE ║ param_list     → IDENTIFIER , IDENTIFIER ║
+║    9 ║ SHIFT  ║ )                                 ║
+║   10 ║ SHIFT  ║ {                                 ║
+║   11 ║ SHIFT  ║ if                                ║
+║   12 ║ SHIFT  ║ (                                 ║
+║   13 ║ SHIFT  ║ !                                 ║
+║   14 ║ SHIFT  ║ userData                          ║
+║   15 ║ SHIFT  ║ .                                 ║
+║   16 ║ SHIFT  ║ email                             ║
+║   17 ║ SHIFT  ║ ||                                ║
+║   18 ║ SHIFT  ║ !                                 ║
+║   19 ║ SHIFT  ║ userData                          ║
+║   20 ║ SHIFT  ║ .                                 ║
+║   21 ║ SHIFT  ║ password                          ║
+║   22 ║ REDUCE ║ if_cond        → ! IDENTIFIER.IDENTIFIER || ! IDENTIFIER.IDENTIFIER ║
+║   23 ║ SHIFT  ║ )                                 ║
+║   24 ║ SHIFT  ║ {                                 ║
+║   25 ║ SHIFT  ║ throw                             ║
+║   26 ║ SHIFT  ║ new                               ║
+║   27 ║ SHIFT  ║ Error                             ║
+║   28 ║ SHIFT  ║ (                                 ║
+║   29 ║ SHIFT  ║ STRING                            ║
+║   30 ║ SHIFT  ║ )                                 ║
+║   31 ║ SHIFT  ║ ;                                 ║
+║   32 ║ REDUCE ║ throw_stmt     → throw new IDENTIFIER ( STRING_LIT ) ║
+║   33 ║ SHIFT  ║ }                                 ║
+║   34 ║ REDUCE ║ if_stmt        → if ( if_cond ) { throw_stmt } ║
+║   35 ║ REDUCE ║ func_stmt      → if_stmt        ║
+║   36 ║ REDUCE ║ func_body      → func_stmt      ║
+║   37 ║ SHIFT  ║ const                             ║
+║   38 ║ SHIFT  ║ existingUser                      ║
+║   39 ║ SHIFT  ║ =                                 ║
+║   40 ║ SHIFT  ║ users                             ║
+║   41 ║ SHIFT  ║ .                                 ║
+║   42 ║ SHIFT  ║ find                              ║
+║   43 ║ SHIFT  ║ (                                 ║
+║   44 ║ SHIFT  ║ u                                 ║
+║   45 ║ SHIFT  ║ =>                                ║
+║   46 ║ SHIFT  ║ u                                 ║
+║   47 ║ SHIFT  ║ .                                 ║
+║   48 ║ SHIFT  ║ email                             ║
+║   49 ║ SHIFT  ║ ===                               ║
+║   50 ║ SHIFT  ║ userData                          ║
+║   51 ║ SHIFT  ║ .                                 ║
+║   52 ║ SHIFT  ║ email                             ║
+║   53 ║ REDUCE ║ expr           → IDENTIFIER.IDENTIFIER === IDENTIFIER.IDENTIFIER ║
+║   54 ║ REDUCE ║ arrow_func     → IDENTIFIER => expr ║
+║   55 ║ SHIFT  ║ )                                 ║
+║   56 ║ REDUCE ║ expr           → IDENTIFIER.IDENTIFIER ( arrow_func ) ║
+║   57 ║ SHIFT  ║ ;                                 ║
+║   58 ║ REDUCE ║ const_decl     → const IDENTIFIER = expr ║
+║   59 ║ REDUCE ║ func_stmt      → const_decl     ║
+║   60 ║ REDUCE ║ func_body      → func_body func_stmt ║
+║   61 ║ SHIFT  ║ if                                ║
+║   62 ║ SHIFT  ║ (                                 ║
+║   63 ║ SHIFT  ║ existingUser                      ║
+║   64 ║ SHIFT  ║ )                                 ║
+║   65 ║ SHIFT  ║ {                                 ║
+║   66 ║ SHIFT  ║ throw                             ║
+║   67 ║ SHIFT  ║ new                               ║
+║   68 ║ SHIFT  ║ Error                             ║
+║   69 ║ SHIFT  ║ (                                 ║
+║   70 ║ SHIFT  ║ STRING                            ║
+║   71 ║ SHIFT  ║ )                                 ║
+║   72 ║ SHIFT  ║ ;                                 ║
+║   73 ║ REDUCE ║ throw_stmt     → throw new IDENTIFIER ( STRING_LIT ) ║
+║   74 ║ SHIFT  ║ }                                 ║
+║   75 ║ REDUCE ║ if_stmt        → if ( IDENTIFIER ) { throw_stmt } ║
+║   76 ║ REDUCE ║ func_stmt      → if_stmt        ║
+║   77 ║ REDUCE ║ func_body      → func_body func_stmt ║
+║   78 ║ SHIFT  ║ const                             ║
+║   79 ║ SHIFT  ║ newUser                           ║
+║   80 ║ SHIFT  ║ =                                 ║
+║   81 ║ SHIFT  ║ {                                 ║
+║   82 ║ SHIFT  ║ id                                ║
+║   83 ║ SHIFT  ║ :                                 ║
+║   84 ║ SHIFT  ║ Date                              ║
+║   85 ║ SHIFT  ║ .                                 ║
+║   86 ║ SHIFT  ║ now                               ║
+║   87 ║ SHIFT  ║ (                                 ║
+║   88 ║ SHIFT  ║ )                                 ║
+║   89 ║ REDUCE ║ expr           → IDENTIFIER.IDENTIFIER () ║
+║   90 ║ REDUCE ║ prop           → IDENTIFIER : expr ║
+║   91 ║ REDUCE ║ prop_list      → prop           ║
+║   92 ║ SHIFT  ║ ,                                 ║
+║   93 ║ SHIFT  ║ email                             ║
+║   94 ║ SHIFT  ║ :                                 ║
+║   95 ║ SHIFT  ║ userData                          ║
+║   96 ║ SHIFT  ║ .                                 ║
+║   97 ║ SHIFT  ║ email                             ║
+║   98 ║ SHIFT  ║ ,                                 ║
+║   99 ║ REDUCE ║ expr           → IDENTIFIER.IDENTIFIER ║
+║  100 ║ REDUCE ║ prop           → IDENTIFIER : expr ║
+║  101 ║ REDUCE ║ prop_list      → prop_list , prop ║
+║  102 ║ SHIFT  ║ password                          ║
+║  103 ║ SHIFT  ║ :                                 ║
+║  104 ║ SHIFT  ║ userData                          ║
+║  105 ║ SHIFT  ║ .                                 ║
+║  106 ║ SHIFT  ║ password                          ║
+║  107 ║ SHIFT  ║ ,                                 ║
+║  108 ║ REDUCE ║ expr           → IDENTIFIER.IDENTIFIER ║
+║  109 ║ REDUCE ║ prop           → IDENTIFIER : expr ║
+║  110 ║ REDUCE ║ prop_list      → prop_list , prop ║
+║  111 ║ SHIFT  ║ isActive                          ║
+║  112 ║ SHIFT  ║ :                                 ║
+║  113 ║ SHIFT  ║ true                              ║
+║  114 ║ REDUCE ║ prop           → IDENTIFIER : true ║
+║  115 ║ REDUCE ║ prop_list      → prop_list , prop ║
+║  116 ║ SHIFT  ║ }                                 ║
+║  117 ║ REDUCE ║ object_literal → { prop_list }  ║
+║  118 ║ SHIFT  ║ ;                                 ║
+║  119 ║ REDUCE ║ const_decl     → const IDENTIFIER = object_literal ║
+║  120 ║ REDUCE ║ func_stmt      → const_decl     ║
+║  121 ║ REDUCE ║ func_body      → func_body func_stmt ║
+║  122 ║ SHIFT  ║ users                             ║
+║  123 ║ SHIFT  ║ .                                 ║
+║  124 ║ SHIFT  ║ push                              ║
+║  125 ║ SHIFT  ║ (                                 ║
+║  126 ║ SHIFT  ║ newUser                           ║
+║  127 ║ SHIFT  ║ )                                 ║
+║  128 ║ REDUCE ║ expr           → IDENTIFIER.IDENTIFIER ( IDENTIFIER ) ║
+║  129 ║ SHIFT  ║ ;                                 ║
+║  130 ║ REDUCE ║ expr_stmt      → expr ;         ║
+║  131 ║ REDUCE ║ func_stmt      → expr_stmt      ║
+║  132 ║ REDUCE ║ func_body      → func_body func_stmt ║
+║  133 ║ SHIFT  ║ return                            ║
+║  134 ║ SHIFT  ║ newUser                           ║
+║  135 ║ SHIFT  ║ ;                                 ║
+║  136 ║ REDUCE ║ return_stmt    → return IDENTIFIER ║
+║  137 ║ REDUCE ║ func_stmt      → return_stmt    ║
+║  138 ║ REDUCE ║ func_body      → func_body func_stmt ║
+║  139 ║ SHIFT  ║ }                                 ║
+║  140 ║ REDUCE ║ async_func_decl → async function IDENTIFIER ( param_list ) { func_body } ║
+║  141 ║ REDUCE ║ stmt           → async_func_decl ║
+║  142 ║ REDUCE ║ stmt_list      → stmt           ║
+║  143 ║ SHIFT  ║ let                               ║
+║  144 ║ SHIFT  ║ users                             ║
+║  145 ║ SHIFT  ║ =                                 ║
+║  146 ║ SHIFT  ║ [                                 ║
+║  147 ║ SHIFT  ║ ]                                 ║
+║  148 ║ SHIFT  ║ ;                                 ║
+║  149 ║ REDUCE ║ var_decl       → let IDENTIFIER = [] ║
+║  150 ║ REDUCE ║ stmt           → var_decl       ║
+║  151 ║ REDUCE ║ stmt_list      → stmt_list stmt ║
+║  152 ║ SHIFT  ║ registerUser                      ║
+║  153 ║ SHIFT  ║ (                                 ║
+║  154 ║ SHIFT  ║ users                             ║
+║  155 ║ SHIFT  ║ ,                                 ║
+║  156 ║ SHIFT  ║ {                                 ║
+║  157 ║ SHIFT  ║ email                             ║
+║  158 ║ SHIFT  ║ :                                 ║
+║  159 ║ SHIFT  ║ STRING                            ║
+║  160 ║ REDUCE ║ prop           → IDENTIFIER : STRING_LIT ║
+║  161 ║ REDUCE ║ prop_list      → prop           ║
+║  162 ║ SHIFT  ║ ,                                 ║
+║  163 ║ SHIFT  ║ password                          ║
+║  164 ║ SHIFT  ║ :                                 ║
+║  165 ║ SHIFT  ║ STRING                            ║
+║  166 ║ REDUCE ║ prop           → IDENTIFIER : STRING_LIT ║
+║  167 ║ REDUCE ║ prop_list      → prop_list , prop ║
+║  168 ║ SHIFT  ║ }                                 ║
+║  169 ║ REDUCE ║ object_literal → { prop_list }  ║
+║  170 ║ SHIFT  ║ )                                 ║
+║  171 ║ SHIFT  ║ .                                 ║
+║  172 ║ SHIFT  ║ then                              ║
+║  173 ║ SHIFT  ║ (                                 ║
+║  174 ║ SHIFT  ║ user                              ║
+║  175 ║ SHIFT  ║ =>                                ║
+║  176 ║ SHIFT  ║ {                                 ║
+║  177 ║ SHIFT  ║ console                           ║
+║  178 ║ SHIFT  ║ .                                 ║
+║  179 ║ SHIFT  ║ log                               ║
+║  180 ║ SHIFT  ║ (                                 ║
+║  181 ║ SHIFT  ║ STRING                            ║
+║  182 ║ SHIFT  ║ ,                                 ║
+║  183 ║ SHIFT  ║ user                              ║
+║  184 ║ SHIFT  ║ .                                 ║
+║  185 ║ SHIFT  ║ email                             ║
+║  186 ║ SHIFT  ║ )                                 ║
+║  187 ║ REDUCE ║ expr           → IDENTIFIER.IDENTIFIER ( STRING_LIT, IDENTIFIER.IDENTIFIER ) ║
+║  188 ║ SHIFT  ║ ;                                 ║
+║  189 ║ REDUCE ║ expr_stmt      → expr ;         ║
+║  190 ║ REDUCE ║ func_stmt      → expr_stmt      ║
+║  191 ║ REDUCE ║ func_body      → func_stmt      ║
+║  192 ║ SHIFT  ║ }                                 ║
+║  193 ║ REDUCE ║ arrow_func     → IDENTIFIER => { func_body } ║
+║  194 ║ SHIFT  ║ )                                 ║
+║  195 ║ SHIFT  ║ ;                                 ║
+║  196 ║ REDUCE ║ expr           → IDENTIFIER ( IDENTIFIER, object_literal ).IDENTIFIER( arrow_func ) ║
+║  197 ║ REDUCE ║ expr_stmt      → expr ;         ║
+║  198 ║ REDUCE ║ stmt           → expr_stmt      ║
+║  199 ║ REDUCE ║ stmt_list      → stmt_list stmt ║
+║  200 ║ REDUCE ║ program        → stmt_list      ║
+║  201 ║ ACCEPT ║ program                           ║
+╚══════╩══════════╩═══════════════════════════════════╝
+
+── PHASE 3: Semantic Analysis ─────────────────────────
+
+╔══════════════════════════════════════════════════════╗
+║              SYMBOL TABLE (Semantic Analysis)        ║
+╠══════════════╦══════════════════════════╦════════════╣
+║ Identifier   ║ Type                     ║ Scope      ║
+╠══════════════╬══════════════════════════╬════════════╣
+║ registerUser ║ async function(User[], UserInput): Promise<User> ║ global     ║
+╚══════════════╩══════════════════════════╩════════════╝
+
+╔══════════════════════════════════════════════════════╗
+║              SEMANTIC DEFINITIONS                    ║
+╚══════════════════════════════════════════════════════╝
+  Type  User        = { id: number, email: string, password: string, isActive: boolean }
+  Type  UserInput   = { email: string, password: string }
+  Func  registerUser: (User[], UserInput) → Promise<User>
+  Var   users       : User[]
+
+── PHASE 4: Code Generation ───────────────────────────
+
+[CodeGen] ✔ TypeScript written to output.ts
+
+✅ Compilation successful.
