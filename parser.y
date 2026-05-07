@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include "ast.h"
 
 void yyerror(const char *s);
@@ -9,6 +10,32 @@ int  yylex(void);
 extern int yylineno;
 
 static Node *root = NULL;
+
+/* ── Error tracking ── */
+#define MAX_ERRORS 32
+typedef struct { int line; char msg[128]; } CompileError;
+static CompileError errors[MAX_ERRORS];
+static int nerrors = 0;
+
+static void sem_error(int line, const char *fmt, ...) {
+    if (nerrors >= MAX_ERRORS) return;
+    errors[nerrors].line = line;
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(errors[nerrors].msg, 127, fmt, ap);
+    va_end(ap);
+    nerrors++;
+}
+
+static void print_errors(void) {
+    if (nerrors == 0) return;
+    printf("\n╔══════════════════════════════════════════════════════╗\n");
+    printf("║                  COMPILATION ERRORS                 ║\n");
+    printf("╠══════════════════════════════════════════════════════╣\n");
+    for (int i = 0; i < nerrors; i++)
+        printf("║  line %-4d  %s\n", errors[i].line, errors[i].msg);
+    printf("╚══════════════════════════════════════════════════════╝\n");
+}
 
 /* ── Type inference structures ── */
 #define MAX_PROPS 32
@@ -142,6 +169,7 @@ static const char *prop_val_type(Node *v) {
 %type <node> stmt expr_stmt var_decl if_stmt throw_stmt return_stmt func_decl block
 %type <list> stmt_list arg_list prop_list elem_list param_list
 
+%define parse.error verbose
 %start program
 
 %%
@@ -163,6 +191,9 @@ stmt
     | return_stmt { $$ = $1; }
     | expr_stmt   { $$ = $1; }
     | block       { $$ = $1; }
+    | error SEMICOLON { $$ = NULL; yyerrok; }
+    | error RBRACE    { $$ = NULL; yyerrok; }
+    | error LBRACE    { $$ = NULL; yyerrok; }
     ;
 
 func_decl
@@ -579,15 +610,22 @@ static void infer_program(Node *n) {
             infer_param_types(s);
             char sig[128], ret[64];
             strncpy(ret, infer_return_type(s), 63);
+
+            /* Semantic check: function must have params to infer types */
+            if (!s->left || !s->left->list)
+                sem_error(0, "function '%s': no parameters — cannot infer types", s->sval);
+
+            /* Semantic check: return type must be resolvable */
+            if (strcmp(ret, "Promise<unknown>") == 0)
+                sem_error(0, "function '%s': return type unknown — no 'const new* = {...}' found in body", s->sval);
+
             snprintf(sig, 127, "async function(...): %s", ret);
             var_set(s->sval, sig, "global");
         }
         if (s->kind == N_VAR_DECL && s->left && s->left->kind == N_ARRAY) {
             var_set(s->sval, "__let_array__", "global");
-            /* if array has object literal elements, register their type */
             if (s->left->list && s->left->list->node &&
                 s->left->list->node->kind == N_OBJECT) {
-                /* derive type name from var name (strip 's') */
                 char elem[64]; strncpy(elem, s->sval, 63);
                 int elen = strlen(elem);
                 if (elen>1 && elem[elen-1]=='s') elem[elen-1]='\0';
@@ -596,6 +634,13 @@ static void infer_program(Node *n) {
             }
         }
     }
+
+    /* Semantic check: warn about unresolved property types */
+    for (int i = 0; i < ntype; i++)
+        for (int j = 0; j < types[i].nprops; j++)
+            if (strcmp(types[i].props[j].type, "unknown") == 0)
+                sem_error(0, "type '%s': property '%s' type could not be inferred",
+                          types[i].name, types[i].props[j].key);
 }
 
 /* ════════════════════════════════════════════════════════
@@ -908,7 +953,12 @@ static void emit_program(Node *n, FILE *f) {
    ════════════════════════════════════════════════════════ */
 
 void yyerror(const char *s) {
-    fprintf(stderr, "[Parse Error] line %d: %s\n", yylineno, s);
+    if (nerrors < MAX_ERRORS) {
+        errors[nerrors].line = yylineno;
+        snprintf(errors[nerrors].msg, 127, "%s", s);
+        nerrors++;
+    }
+    fprintf(stderr, "  ❌ line %d: %s\n", yylineno, s);
 }
 
 int main(void) {
@@ -918,15 +968,27 @@ int main(void) {
     printf("╚══════════════════════════════════════════════════════╝\n\n");
 
     printf("── PHASE 1 & 2: Lexical + Syntax Analysis ─────────────\n");
-    if (yyparse() != 0) {
-        fprintf(stderr, "Parsing failed.\n");
+    yyparse();
+
+    if (nerrors > 0) {
+        printf("\n╔══════════════════════════════════════════════════════╗\n");
+        printf("║                  SYNTAX ERRORS FOUND                ║\n");
+        printf("╠══════╦═══════════════════════════════════════════════╣\n");
+        printf("║ Line ║ Error                                         ║\n");
+        printf("╠══════╬═══════════════════════════════════════════════╣\n");
+        for (int i = 0; i < nerrors; i++)
+            printf("║ %-4d ║ %-45s ║\n", errors[i].line, errors[i].msg);
+        printf("╚══════╩═══════════════════════════════════════════════╝\n");
+        printf("\n❌ Compilation aborted — %d error(s) found. No output produced.\n", nerrors);
         return 1;
     }
+
     printf("  ✔ Parse successful.\n");
 
     printf("\n── PHASE 3: Semantic Analysis ─────────────────────────\n");
     infer_program(root);
     print_symtable();
+    print_errors();
 
     printf("\n── PHASE 4: Code Generation ───────────────────────────\n");
     FILE *out = fopen("output.ts", "w");
