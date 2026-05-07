@@ -1,0 +1,88 @@
+JS -> TS Compiler  Parse Trace
+Input : input.js
+======================================================
+
+-- PHASE 1: Lexical Analysis --------------------------
+   Tokens recognised by flex rules in lexer.l
+
+-- PHASE 2: Syntax Analysis  (AST) --------------------
+   LALR(1) parser reduces token stream to AST nodes.
+
+    [Program]
+      [Async Function] registerUser
+        [Params]
+          [Ident] users
+          [Ident] userData
+        [Body]
+          [IfStmt]
+            [Condition]
+              [Binary] ||
+                [Unary] !
+                  [Member] userData.email
+                [Unary] !
+                  [Member] userData.password
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [VarDecl] const existingUser
+            [Call]
+              [Callee]
+                [Member] users.find
+              [Args]
+                [ArrowFunc]
+                  [Param]
+                    [Ident] u
+                  [Body]
+                    [Binary] ===
+                      [Member] u.email
+                      [Member] userData.email
+          [IfStmt]
+            [Condition]
+              [Ident] existingUser
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [VarDecl] const newUser
+            [ObjectLiteral]
+              [Prop] id:
+                [Call]
+                  [Callee]
+                    [Member] Date.now
+              [Prop] email:
+                [Member] userData.email
+              [Prop] password:
+                [Member] userData.password
+              [Prop] isActive:
+                [Bool] true
+          [ExprStmt]
+            [Call]
+              [Callee]
+                [Member] users.push
+              [Args]
+                [Ident] newUser
+          [ReturnStmt]
+            [Ident] newUser
+      [VarDecl] let users
+        [ArrayLiteral]
+      [ExprStmt]
+        [Call]
+          [Callee]
+            [Member] .then
+          [Args]
+            [ArrowFunc]
+              [Param]
+                [Ident] user
+              [Body]
+                
+-- PHASE 3: Semantic Analysis -------------------------
+   Identifier        Inferred Type                   Scope
+   ----------------  ------------------------------  ------
+   newUser           User                            registerUser
+   users             User[]                          registerUser
+   userData          UserInput                       registerUser
+   registerUser      async function(...): Promise<User>  global
+   users             __let_array__                   global
+
+-- PHASE 4: Code Generation ---------------------------
+   TypeScript emitted by walking AST with inferred types.
+   Output written to output.ts

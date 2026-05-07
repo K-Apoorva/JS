@@ -1,0 +1,104 @@
+JS -> TS Compiler  Parse Trace
+Input : input2.js
+======================================================
+
+-- PHASE 1: Lexical Analysis --------------------------
+   Tokens recognised by flex rules in lexer.l
+
+-- PHASE 2: Syntax Analysis  (AST) --------------------
+   LALR(1) parser reduces token stream to AST nodes.
+
+    [Program]
+      [Async Function] uploadFile
+        [Params]
+          [Ident] files
+          [Ident] fileData
+        [Body]
+          [IfStmt]
+            [Condition]
+              [Binary] ||
+                [Unary] !
+                  [Member] fileData.name
+                [Unary] !
+                  [Member] fileData.size
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [VarDecl] const MAX_SIZE
+            [Binary] *
+              [Binary] *
+                [Number] 5
+                [Number] 1024
+              [Number] 1024
+          [IfStmt]
+            [Condition]
+              [Binary] >
+                [Member] fileData.size
+                [Ident] MAX_SIZE
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [VarDecl] const fileExists
+            [Call]
+              [Callee]
+                [Member] files.find
+              [Args]
+                [ArrowFunc]
+                  [Param]
+                    [Ident] f
+                  [Body]
+                    [Binary] ===
+                      [Member] f.name
+                      [Member] fileData.name
+          [IfStmt]
+            [Condition]
+              [Ident] fileExists
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [VarDecl] const newFile
+            [ObjectLiteral]
+              [Prop] id:
+                [Call]
+                  [Callee]
+                    [Member] Date.now
+              [Prop] name:
+                [Member] fileData.name
+              [Prop] size:
+                [Member] fileData.size
+              [Prop] uploadedAt:
+                [Call]
+                  [Callee]
+                    [Member] .toISOString
+          [ExprStmt]
+            [Call]
+              [Callee]
+                [Member] files.push
+              [Args]
+                [Ident] newFile
+          [ReturnStmt]
+            [Ident] newFile
+      [VarDecl] let files
+        [ArrayLiteral]
+      [ExprStmt]
+        [Call]
+          [Callee]
+            [Member] .catch
+          [Args]
+            [ArrowFunc]
+              [Param]
+                [Ident] err
+              [Body]
+                
+-- PHASE 3: Semantic Analysis -------------------------
+   Identifier        Inferred Type                   Scope
+   ----------------  ------------------------------  ------
+   newFile           FileRecord                      uploadFile
+   files             FileRecord[]                    uploadFile
+   fileData          FileInput                       uploadFile
+   uploadFile        async function(...): Promise<FileRecord>  global
+   files             __let_array__                   global
+
+-- PHASE 4: Code Generation ---------------------------
+   TypeScript emitted by walking AST with inferred types.
+   Output written to output.ts

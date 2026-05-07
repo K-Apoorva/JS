@@ -1,575 +1,378 @@
-# Semantic Analysis (SDD + SDT with Explanations)
+# Phase 3 — Semantic Analysis
 
-**SDD (Syntax Directed Definition)** tells **what attributes are computed** for each grammar rule.
-**SDT (Syntax Directed Translation)** tells **what action is executed during parsing**.
+## Role
 
-Use this format in viva/written exam.
+Semantic analysis runs after the AST is built. It walks the tree and answers the question: **what does this code mean?** Specifically:
 
-# Attribute Legend
+- What type does each variable have?
+- What type does each function return?
+- What are the shapes of the objects being constructed?
+- Are there any type-level problems?
 
-| Attribute | Meaning                |
-| --------- | ---------------------- |
-| `type`    | datatype               |
-| `val`     | computed numeric value |
-| `lexval`  | actual token text      |
-| `place`   | variable/temp name     |
-| `code`    | generated code         |
-| `scope`   | scope name             |
-
-
+The results are stored in a **symbol table** and a **type registry**, which the code generation phase reads to emit typed TypeScript.
 
 ---
 
-# 1. Program Rule
+## SDD and SDT
 
-## Production
+**SDD (Syntax Directed Definition)** — specifies what attributes are computed for each grammar rule.  
+**SDT (Syntax Directed Translation)** — specifies what action is executed when a rule is reduced.
 
-```text id="o6z0zy"
+---
+
+## 1. Program
+
+### Production
+```
 program → stmt_list
 ```
 
-## SDD
-
-```text id="y6jngw"
+### SDD
+```
 program.code = stmt_list.code
 ```
 
-### Explanation
-
-The complete program consists of all statements, so generated code of program is taken from statement list.
-
-## SDT
-
-```text id="x6v6t0"
-{ print("Compilation Successful"); }
+### SDT
+```c
+infer_program(root);   // walk all top-level statements
 ```
 
-### Explanation
-
-After full parsing succeeds, compiler confirms valid program.
+The semantic pass is a single post-parse walk of the AST. It processes each top-level statement in order.
 
 ---
 
-# 2. Statement List
+## 2. Async Function Declaration
 
-## Production
-
-```text id="g0a66o"
-stmt_list → stmt_list stmt
+### Production
+```
+func_decl → ASYNC FUNCTION IDENTIFIER ( param_list ) block
 ```
 
-## SDD
-
-```text id="6x4v1r"
-stmt_list.code = stmt_list1.code || stmt.code
+### SDD
+```
+IDENTIFIER.lexval  = function name
+func.returnType    = Promise<T>  where T = derive_type_name(last const obj in body)
+func.paramTypes    = inferred from usage inside body
 ```
 
-### Explanation
-
-Existing statement code is combined with new statement code.
-
-## SDT
-
-```text id="qux30u"
-{ append statement output }
+### SDT
+```c
+infer_param_types(func_node);
+var_set(func->sval, "async function(...): Promise<T>", "global");
 ```
 
-### Explanation
+**How param types are inferred:**
 
-Each new parsed statement is added sequentially.
+The body is scanned for usage patterns:
+
+| Pattern seen | Inference |
+|---|---|
+| `param.find(...)` or `param.push(...)` | param is an array |
+| `param.filter(...)` or `param.map(...)` | param is an array |
+| No array usage | param is an input object |
+
+Array element type is derived from the param name by stripping the plural `s`:
+- `users` → `User[]`
+- `files` → `FileRecord[]` (builtin collision → append `Record`)
+- `products` → `Product[]`
+
+Input object type is derived from the param name:
+- `userData` → strip `Data` → `User` → append `Input` → `UserInput`
+- `fileData` → `FileInput`
+- `order` → `OrderInput`
+
+**How return type is inferred:**
+
+The body is scanned for `const newX = { ... }`. The variable name is used to derive the type:
+- `newUser` → strip `new` → `User` → return `Promise<User>`
+- `newFile` → `File` → builtin collision → `FileRecord` → `Promise<FileRecord>`
+- `newOrder` → `Order` → `Promise<Order>`
 
 ---
 
-# 3. Async Function Declaration
+## 3. Parameter List
 
-## Production
-
-```text id="n9o6q3"
-async_func_decl →
-async function IDENTIFIER(param_list){func_body}
+### Production
 ```
-
-## SDD
-
-```text id="j4a87f"
-IDENTIFIER.lexval = function name
-async_func_decl.type = function
-async_func_decl.returnType = Promise<T>
-```
-
-### Explanation
-
-The parser stores function name, recognizes it as function type, and async functions return Promise.
-
-## SDT
-
-```text id="db3c0h"
-{ sym_add(name, signature, global); }
-```
-
-### Explanation
-
-Function is inserted into symbol table so later calls can be checked.
-
----
-
-# 4. Parameter List
-
-## Production
-
-```text id="3fy1lh"
 param_list → IDENTIFIER , IDENTIFIER
+           | IDENTIFIER
 ```
 
-## SDD
-
-```text id="epn2a5"
-count = 2
-param names = identifiers
+### SDD
+```
+param.lexval = identifier name
+param.scope  = enclosing function name
 ```
 
-### Explanation
-
-Compiler records number of parameters and their names.
-
-## SDT
-
-```text id="krv9pr"
-{ store parameters in current scope }
+### SDT
+```c
+// params are stored as N_IDENT nodes in func->left->list
+// typed during infer_param_types()
+var_set(pname, inferred_type, func->sval);
 ```
-
-### Explanation
-
-Parameters behave as local variables inside function body.
 
 ---
 
-# 5. Variable Declaration
+## 4. Variable Declaration (const)
 
-## Production
-
-```text id="r9dn8f"
-var_decl → let IDENTIFIER = [ ]
+### Production
+```
+var_decl → CONST IDENTIFIER = object_literal
 ```
 
-## SDD
-
-```text id="zqjlwm"
-IDENTIFIER.type = array
+### SDD
+```
+IDENTIFIER.type  = derive_type_name(IDENTIFIER.lexval)
+object.typeName  = IDENTIFIER.type
 ```
 
-### Explanation
-
-Empty brackets indicate array initialization.
-
-## SDT
-
-```text id="l6n2uv"
-{ add variable to symbol table }
+### SDT
+```c
+char *tn = derive_type_name(s->sval);   // "newUser" → "User"
+register_object_type(tn, s->left);      // build TypeDef from object literal
+var_set(s->sval, tn, func->sval);       // add to symbol table
 ```
 
-### Explanation
+`register_object_type` walks the object literal's property list and infers each property's type:
 
-Variable must be stored for later usage.
+| Property value | Inferred type |
+|---|---|
+| `true` / `false` | `boolean` |
+| `"string"` | `string` |
+| `123` | `number` |
+| `Date.now()` | `number` |
+| `new Date().toISOString()` | `string` |
+| `x * y` (binary) | `number` |
+| `param.field` (member access) | `string` (field name heuristic) |
 
 ---
 
-# 6. Constant Declaration
+## 5. Variable Declaration (let array)
 
-## Production
-
-```text id="36r6je"
-const_decl → const IDENTIFIER = expr
+### Production
+```
+var_decl → LET IDENTIFIER = [ ]
+         | LET IDENTIFIER = [ elem_list ]
 ```
 
-## SDD
-
-```text id="0kw45k"
-IDENTIFIER.type = expr.type
-IDENTIFIER.val = expr.val
+### SDD
+```
+IDENTIFIER.type = "__let_array__"   (resolved at emit time)
 ```
 
-### Explanation
-
-Constant gets type and value from assigned expression.
-
-## SDT
-
-```text id="0qwr1p"
-{ insert constant in table }
+### SDT
+```c
+var_set(s->sval, "__let_array__", "global");
+// if array contains object literal elements, register their type
+register_object_type(elem_type_name, first_element_node);
 ```
-
-### Explanation
-
-Compiler stores immutable variable entry.
 
 ---
 
-# 7. Numeric Constant Expression
+## 6. If Statement
 
-## Production
-
-```text id="l5r0zi"
-const_decl → const MAX_SIZE = 5 * 1024 * 1024
+### Production
+```
+if_stmt → IF ( expr ) block
+        | IF ( expr ) block ELSE block
 ```
 
-## SDD
-
-```text id="rtg11d"
-type = number
-val = multiplication result
+### SDD
+```
+expr.type = boolean   (enforced by JS semantics — any value is truthy/falsy)
 ```
 
-### Explanation
-
-Arithmetic expression is evaluated during compile time if literals are known.
-
-## SDT
-
-```text id="9pq7ri"
-{ store MAX_SIZE = 5242880 }
-```
-
-### Explanation
-
-This is constant folding optimization.
+### SDT
+No explicit type check is emitted — the condition is reproduced as-is in the output. The semantic value is that the condition structure is preserved in the AST for accurate code generation.
 
 ---
 
-# 8. If Statement
+## 7. Throw Statement
 
-## Production
-
-```text id="e4pg1x"
-if_stmt → if(if_cond){throw_stmt}
+### Production
+```
+throw_stmt → THROW expr
 ```
 
-## SDD
-
-```text id="z55m4o"
-if_cond.type = boolean
+### SDD
+```
+expr.type = Error (or any throwable)
 ```
 
-### Explanation
-
-Condition must evaluate to true/false.
-
-## SDT
-
-```text id="vs3wd7"
-{ validate condition type }
-```
-
-### Explanation
-
-Rejects invalid conditions if unsupported type found.
+### SDT
+The throw node is stored in the AST and emitted verbatim. No type constraint is enforced at this phase.
 
 ---
 
-# 9. Condition Rule
+## 8. Return Statement
 
-## Production
-
-```text id="9u6q7v"
-if_cond → !fileData.name || !fileData.size
+### Production
+```
+return_stmt → RETURN expr
 ```
 
-## SDD
-
-```text id="dn2pzi"
-if_cond.type = boolean
+### SDD
+```
+return.type = expr.type
 ```
 
-### Explanation
-
-Logical NOT and OR operations always produce boolean result.
+### SDT
+The return value's variable name is used to confirm the return type matches the inferred `Promise<T>`. If the returned identifier matches the `newX` variable, the return type is confirmed.
 
 ---
 
-# 10. Throw Statement
+## 9. Object Literal
 
-## Production
-
-```text id="f12af9"
-throw_stmt → throw new Error("msg")
+### Production
 ```
-
-## SDD
-
-```text id="k3ahmv"
-STRING.type = string
-```
-
-### Explanation
-
-Error constructor receives message text.
-
-## SDT
-
-```text id="0n9d0r"
-{ emit throw instruction }
-```
-
-### Explanation
-
-Generated output preserves runtime exception behavior.
-
----
-
-# 11. Number Expression
-
-## Production
-
-```text id="twqjqa"
-expr → NUMBER
-```
-
-## SDD
-
-```text id="tpr5m0"
-expr.type = number
-expr.val = token value
-```
-
-### Explanation
-
-Numeric token becomes numeric expression.
-
----
-
-# 12. String Expression
-
-## Production
-
-```text id="08c4q8"
-expr → STRING
-```
-
-## SDD
-
-```text id="1g0aqf"
-expr.type = string
-```
-
-### Explanation
-
-String literal directly has string type.
-
----
-
-# 13. Identifier Expression
-
-## Production
-
-```text id="ebw5vr"
-expr → IDENTIFIER
-```
-
-## SDD
-
-```text id="pqv7x6"
-expr.type = lookup(id).type
-```
-
-### Explanation
-
-Compiler checks symbol table to know declared type.
-
-## SDT
-
-```text id="d2m1tm"
-{ verify identifier exists }
-```
-
-### Explanation
-
-Prevents use of undeclared variables.
-
----
-
-# 14. Arithmetic Expression
-
-## Production
-
-```text id="8m6b6t"
-expr → NUMBER * NUMBER
-```
-
-## SDD
-
-```text id="2jzq0k"
-expr.type = number
-expr.val = n1 * n2
-```
-
-### Explanation
-
-Multiplication of numbers gives numeric result.
-
----
-
-# 15. Comparison Expression
-
-## Production
-
-```text id="hl23n4"
-expr → f.name === fileData.name
-```
-
-## SDD
-
-```text id="32h75j"
-expr.type = boolean
-```
-
-### Explanation
-
-Equality comparison returns true or false.
-
----
-
-# 16. Function Call
-
-## Production
-
-```text id="7stx5e"
-expr → files.push(newFile)
-```
-
-## SDD
-
-```text id="jbrh7h"
-expr.type = returnType(method)
-```
-
-### Explanation
-
-Method call result depends on called function.
-
-## SDT
-
-```text id="cvbr3f"
-{ validate arguments count/types }
-```
-
-### Explanation
-
-Ensures proper function usage.
-
----
-
-# 17. Arrow Function
-
-## Production
-
-```text id="7v7g1g"
-arrow_func → f => expr
-```
-
-## SDD
-
-```text id="2m3wr9"
-param = f
-returnType = expr.type
-```
-
-### Explanation
-
-Arrow function accepts parameter and returns expression type.
-
-## SDT
-
-```text id="2z4h9s"
-{ create local lambda scope }
-```
-
-### Explanation
-
-Parameter should exist only inside arrow function body.
-
----
-
-# 18. Object Literal
-
-## Production
-
-```text id="ww6wvw"
 object_literal → { prop_list }
+prop           → IDENTIFIER : expr
 ```
 
-## SDD
-
-```text id="5r0u0g"
-type = record/object
+### SDD
+```
+prop.key   = IDENTIFIER.lexval
+prop.type  = infer from expr node kind
+object.shape = { prop.key: prop.type, ... }
 ```
 
-### Explanation
+### SDT
+```c
+// called during infer_param_types when const newX = { ... } is found
+static void register_object_type(const char *tname, Node *obj) {
+    TypeDef *td = type_new(tname);
+    for each prop in obj->list:
+        type_add_prop(td, prop->sval, prop_val_type(prop->left));
+}
+```
 
-Set of named fields forms object structure.
+The `TypeDef` struct stores the type name and all its properties with their inferred types. This is later used by code generation to emit `type X = { ... }`.
 
 ---
 
-# 19. Property Rule
+## 10. Arrow Function
 
-## Production
-
-```text id="2jmx2w"
-prop → name : expr
+### Production
+```
+arrow_func → IDENTIFIER => assign_expr
+           | IDENTIFIER => block
 ```
 
-## SDD
-
-```text id="6m5n6z"
-prop.name = identifier
-prop.type = expr.type
+### SDD
+```
+param.lexval   = IDENTIFIER
+body.type      = assign_expr.type
 ```
 
-### Explanation
-
-Each object property stores key and value type.
-
-## SDT
-
-```text id="g8afg7"
-{ save property metadata }
+### SDT
+When the arrow function appears as an argument to `.find()`, `.filter()`, or `.map()`, the code generator annotates the parameter with the array's element type:
+```typescript
+(u: User) => u.email === userData.email
 ```
-
-### Explanation
-
-Used later to generate TypeScript interface/type.
 
 ---
 
-# 20. Return Statement
+## 11. Binary Expression
 
-## Production
-
-```text id="2gx0xq"
-return_stmt → return newFile
+### Production
+```
+eq_expr  → eq_expr === rel_expr
+rel_expr → rel_expr < add_expr
+add_expr → add_expr + mul_expr
+mul_expr → mul_expr * unary_expr
 ```
 
-## SDD
-
-```text id="3xj4xq"
-return.type = newFile.type
+### SDD
+```
+===, !==, <, >, <=, >=, ||, &&  →  expr.type = boolean
++, -, *, /, %                   →  expr.type = number
 ```
 
-### Explanation
-
-Returned value determines statement type.
-
-## SDT
-
-```text id="3ghh3u"
-{ compare with function return type }
-```
-
-### Explanation
-
-Ensures function returns correct type.
+### SDT
+Used by `prop_val_type()` — if a property value is a binary expression, its type is inferred as `number`.
 
 ---
 
-# Viva One-Liner
+## 12. Identifier Expression
 
-**SDD computes attributes. SDT performs semantic actions during parsing.**
+### Production
+```
+primary_expr → IDENTIFIER
+```
+
+### SDD
+```
+expr.type = var_type(IDENTIFIER.lexval)
+```
+
+### SDT
+```c
+const char *var_type(const char *name) {
+    // linear scan of symbol table, returns type string
+}
+```
+
+---
+
+## Symbol Table
+
+The symbol table is a flat array of `VarEntry` structs:
+
+```c
+typedef struct {
+    char name[64];
+    char type[64];
+    char scope[32];
+} VarEntry;
+```
+
+`var_set(name, type, scope)` inserts or updates — matching on both name **and** scope so a param named `users` in function scope doesn't overwrite a global `let users`.
+
+`var_type(name)` returns the first match by name (used during expression type lookup).
+
+`var_type_in(name, scope)` returns a scope-specific match (used during param type lookup in codegen).
+
+---
+
+## Type Registry
+
+The type registry is a flat array of `TypeDef` structs:
+
+```c
+typedef struct {
+    char name[64];
+    Prop props[MAX_PROPS];
+    int  nprops;
+} TypeDef;
+```
+
+Each `TypeDef` represents one TypeScript type alias. Properties are added by `type_add_prop(td, key, type)`. The registry is walked by code generation to emit all `type X = { ... }` declarations.
+
+---
+
+## Semantic Error Checks
+
+After inference, the following are checked:
+
+| Check | Error message |
+|---|---|
+| Function has no parameters | `function 'X': no parameters — cannot infer types` |
+| No `const new* = {...}` in body | `function 'X': return type unknown` |
+| Property type could not be inferred | `type 'X': property 'Y' type could not be inferred` |
+
+Errors are collected in the same error array as syntax errors and printed in the final error table.
+
+---
+
+## Symbol Table Output (example — input.js)
+
+```
+╔════════════════╦══════════════════════════════╦══════════════╗
+║ Identifier     ║ Type                         ║ Scope        ║
+╠════════════════╬══════════════════════════════╬══════════════╣
+║ newUser        ║ User                         ║ registerUser ║
+║ users          ║ User[]                       ║ registerUser ║
+║ userData       ║ UserInput                    ║ registerUser ║
+║ registerUser   ║ async function(...): Promise<User> ║ global  ║
+╚════════════════╩══════════════════════════════╩══════════════╝
+```

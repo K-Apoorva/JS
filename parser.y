@@ -10,6 +10,12 @@ int  yylex(void);
 extern int yylineno;
 
 static Node *root = NULL;
+static FILE *trace_f = NULL;  /* trace output file, NULL = no tracing */
+
+static void trace(const char *phase, const char *rule) {
+    if (!trace_f) return;
+    fprintf(trace_f, "[%-8s]  %s\n", phase, rule);
+}
 
 /* ── Error tracking ── */
 #define MAX_ERRORS 32
@@ -646,6 +652,110 @@ static void infer_program(Node *n) {
 /* ════════════════════════════════════════════════════════
    SYMBOL TABLE PRINT
    ════════════════════════════════════════════════════════ */
+
+/* PARSE TRACE */
+static void trace_node(Node *n, FILE *f, int depth) {
+    if (!n) return;
+    for (int i=0;i<depth;i++) fprintf(f,"  ");
+    switch (n->kind) {
+    case N_PROGRAM:
+        fprintf(f,"[Program]\n");
+        for (NodeList *l=n->list;l;l=l->next) trace_node(l->node,f,depth+1);
+        break;
+    case N_FUNC:
+        fprintf(f,"[%sFunction] %s\n", n->ival?"Async ":"", n->sval);
+        for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Params]\n");
+        if (n->left) for (NodeList *l=n->left->list;l;l=l->next) trace_node(l->node,f,depth+2);
+        for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Body]\n");
+        if (n->right) for (NodeList *l=n->right->list;l;l=l->next) trace_node(l->node,f,depth+2);
+        break;
+    case N_VAR_DECL:
+        fprintf(f,"[VarDecl] %s %s\n", n->ival?"const":"let", n->sval);
+        trace_node(n->left,f,depth+1);
+        break;
+    case N_IF:
+        fprintf(f,"[IfStmt]\n");
+        for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Condition]\n");
+        trace_node(n->left,f,depth+2);
+        for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Then]\n");
+        if (n->right) for (NodeList *l=n->right->list;l;l=l->next) trace_node(l->node,f,depth+2);
+        if (n->extra) {
+            for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Else]\n");
+            for (NodeList *l=n->extra->list;l;l=l->next) trace_node(l->node,f,depth+2);
+        }
+        break;
+    case N_THROW:
+        fprintf(f,"[ThrowStmt]\n"); trace_node(n->left,f,depth+1); break;
+    case N_RETURN:
+        fprintf(f,"[ReturnStmt]\n"); trace_node(n->left,f,depth+1); break;
+    case N_EXPR_STMT:
+        fprintf(f,"[ExprStmt]\n"); trace_node(n->left,f,depth+1); break;
+    case N_CALL:
+        fprintf(f,"[Call]\n");
+        for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Callee]\n");
+        trace_node(n->left,f,depth+2);
+        if (n->list) {
+            for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Args]\n");
+            for (NodeList *l=n->list;l;l=l->next) trace_node(l->node,f,depth+2);
+        }
+        break;
+    case N_MEMBER:
+        fprintf(f,"[Member] ");
+        if (n->left&&n->left->kind==N_IDENT) fprintf(f,"%s",n->left->sval);
+        fprintf(f,".");
+        if (n->right&&n->right->kind==N_IDENT) fprintf(f,"%s",n->right->sval);
+        fprintf(f,"\n"); break;
+    case N_BINARY:
+        fprintf(f,"[Binary] %s\n",n->sval);
+        trace_node(n->left,f,depth+1); trace_node(n->right,f,depth+1); break;
+    case N_UNARY:
+        fprintf(f,"[Unary] %s\n",n->sval); trace_node(n->left,f,depth+1); break;
+    case N_ASSIGN:
+        fprintf(f,"[Assign] %s\n",n->sval);
+        trace_node(n->left,f,depth+1); trace_node(n->right,f,depth+1); break;
+    case N_OBJECT:
+        fprintf(f,"[ObjectLiteral]\n");
+        for (NodeList *l=n->list;l;l=l->next) trace_node(l->node,f,depth+1); break;
+    case N_PROP:
+        fprintf(f,"[Prop] %s:\n",n->sval); trace_node(n->left,f,depth+1); break;
+    case N_ARRAY:
+        fprintf(f,"[ArrayLiteral]\n");
+        for (NodeList *l=n->list;l;l=l->next) trace_node(l->node,f,depth+1); break;
+    case N_ARROW:
+        fprintf(f,"[ArrowFunc]\n");
+        for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Param]\n");
+        trace_node(n->left,f,depth+2);
+        for (int i=0;i<depth+1;i++) fprintf(f,"  "); fprintf(f,"[Body]\n");
+        trace_node(n->right,f,depth+2); break;
+    case N_NEW:  fprintf(f,"[New] %s\n",n->sval); break;
+    case N_IDENT: fprintf(f,"[Ident] %s\n",n->sval); break;
+    case N_STR:   fprintf(f,"[String] %s\n",n->sval); break;
+    case N_NUM:   fprintf(f,"[Number] %s\n",n->sval); break;
+    case N_BOOL:  fprintf(f,"[Bool] %s\n",n->sval); break;
+    case N_NULL:  fprintf(f,"[Null]\n"); break;
+    default: break;
+    }
+}
+
+static void write_trace(FILE *f, const char *input_name) {
+    fprintf(f,"JS -> TS Compiler  Parse Trace\n");
+    fprintf(f,"Input : %s\n", input_name);
+    fprintf(f,"======================================================\n\n");
+    fprintf(f,"-- PHASE 1: Lexical Analysis --------------------------\n");
+    fprintf(f,"   Tokens recognised by flex rules in lexer.l\n\n");
+    fprintf(f,"-- PHASE 2: Syntax Analysis  (AST) --------------------\n");
+    fprintf(f,"   LALR(1) parser reduces token stream to AST nodes.\n\n");
+    trace_node(root, f, 2);
+    fprintf(f,"\n-- PHASE 3: Semantic Analysis -------------------------\n");
+    fprintf(f,"   %-16s  %-30s  %s\n","Identifier","Inferred Type","Scope");
+    fprintf(f,"   %-16s  %-30s  %s\n","----------------","------------------------------","------");
+    for (int i=0;i<nvar;i++)
+        fprintf(f,"   %-16s  %-30s  %s\n",vars[i].name,vars[i].type,vars[i].scope);
+    fprintf(f,"\n-- PHASE 4: Code Generation ---------------------------\n");
+    fprintf(f,"   TypeScript emitted by walking AST with inferred types.\n");
+    fprintf(f,"   Output written to output.ts\n");
+}
+
 static void print_symtable(void) {
     printf("\n╔══════════════════════════════════════════════════════════════╗\n");
     printf("║              SYMBOL TABLE (Semantic Analysis)                ║\n");
@@ -961,7 +1071,12 @@ void yyerror(const char *s) {
     fprintf(stderr, "  ❌ line %d: %s\n", yylineno, s);
 }
 
-int main(void) {
+
+int main(int argc, char *argv[]) {
+    /* optional: ./js2ts tracefile.txt < input.js */
+    const char *trace_name = (argc > 1) ? argv[1] : NULL;
+    const char *input_label = (argc > 2) ? argv[2] : "stdin";
+
     printf("╔══════════════════════════════════════════════════════╗\n");
     printf("║         JS → TS Compiler  (Lex + Bison)              ║\n");
     printf("║   Phases: Lexical | Syntax | Semantic | CodeGen      ║\n");
@@ -996,6 +1111,17 @@ int main(void) {
     emit_program(root, out);
     fclose(out);
     printf("  ✔ TypeScript written to output.ts\n");
+
+    if (trace_name) {
+        FILE *tf = fopen(trace_name, "w");
+        if (tf) {
+            write_trace(tf, input_label);
+            fclose(tf);
+            printf("  ✔ Parse trace written to %s\n", trace_name);
+        } else {
+            perror(trace_name);
+        }
+    }
 
     ast_free(root);
     printf("\n✅ Compilation successful.\n");

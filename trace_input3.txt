@@ -1,0 +1,102 @@
+JS -> TS Compiler  Parse Trace
+Input : input3.js
+======================================================
+
+-- PHASE 1: Lexical Analysis --------------------------
+   Tokens recognised by flex rules in lexer.l
+
+-- PHASE 2: Syntax Analysis  (AST) --------------------
+   LALR(1) parser reduces token stream to AST nodes.
+
+    [Program]
+      [Async Function] placeOrder
+        [Params]
+          [Ident] products
+          [Ident] order
+        [Body]
+          [IfStmt]
+            [Condition]
+              [Binary] ||
+                [Unary] !
+                  [Member] order.productId
+                [Unary] !
+                  [Member] order.quantity
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [VarDecl] const product
+            [Call]
+              [Callee]
+                [Member] products.find
+              [Args]
+                [ArrowFunc]
+                  [Param]
+                    [Ident] p
+                  [Body]
+                    [Binary] ===
+                      [Member] p.id
+                      [Member] order.productId
+          [IfStmt]
+            [Condition]
+              [Unary] !
+                [Ident] product
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [IfStmt]
+            [Condition]
+              [Binary] <
+                [Member] product.stock
+                [Member] order.quantity
+            [Then]
+              [ThrowStmt]
+                [New] Error
+          [ExprStmt]
+            [Assign] -=
+              [Member] product.stock
+              [Member] order.quantity
+          [VarDecl] const newOrder
+            [ObjectLiteral]
+              [Prop] orderId:
+                [Call]
+                  [Callee]
+                    [Member] Date.now
+              [Prop] productId:
+                [Member] order.productId
+              [Prop] quantity:
+                [Member] order.quantity
+              [Prop] status:
+                [String] "confirmed"
+          [ReturnStmt]
+            [Ident] newOrder
+      [VarDecl] let products
+        [ArrayLiteral]
+          [ObjectLiteral]
+            [Prop] id:
+              [Number] 101
+            [Prop] name:
+              [String] "Laptop"
+            [Prop] stock:
+              [Number] 5
+      [ExprStmt]
+        [Call]
+          [Callee]
+            [Member] .catch
+          [Args]
+            [ArrowFunc]
+              [Param]
+                [Ident] err
+              [Body]
+                
+-- PHASE 3: Semantic Analysis -------------------------
+   Identifier        Inferred Type                   Scope
+   ----------------  ------------------------------  ------
+   newOrder          Order                           placeOrder
+   products          Product[]                       placeOrder
+   order             OrderInput                      placeOrder
+   placeOrder        async function(...): Promise<Order>  global
+   products          __let_array__                   global
+
+-- PHASE 4: Code Generation ---------------------------
+   TypeScript emitted by walking AST with inferred types.
+   Output written to output.ts
