@@ -59,33 +59,41 @@ extern int yydebug;
     CONST = 260,                   /* CONST  */
     LET = 261,                     /* LET  */
     IF = 262,                      /* IF  */
-    RETURN = 263,                  /* RETURN  */
-    THROW = 264,                   /* THROW  */
-    NEW = 265,                     /* NEW  */
-    TRUE_LIT = 266,                /* TRUE_LIT  */
-    FALSE_LIT = 267,               /* FALSE_LIT  */
-    ARROW = 268,                   /* ARROW  */
-    EQ = 269,                      /* EQ  */
-    OR = 270,                      /* OR  */
-    DOT = 271,                     /* DOT  */
-    COMMA = 272,                   /* COMMA  */
-    SEMICOLON = 273,               /* SEMICOLON  */
-    COLON = 274,                   /* COLON  */
-    LPAREN = 275,                  /* LPAREN  */
-    RPAREN = 276,                  /* RPAREN  */
-    LBRACE = 277,                  /* LBRACE  */
-    RBRACE = 278,                  /* RBRACE  */
-    LBRACKET = 279,                /* LBRACKET  */
-    RBRACKET = 280,                /* RBRACKET  */
-    NOT = 281,                     /* NOT  */
-    ASSIGN = 282,                  /* ASSIGN  */
-    STAR = 283,                    /* STAR  */
-    LT = 284,                      /* LT  */
-    GT = 285,                      /* GT  */
-    MINUS_ASSIGN = 286,            /* MINUS_ASSIGN  */
-    IDENTIFIER = 287,              /* IDENTIFIER  */
-    STRING_LIT = 288,              /* STRING_LIT  */
-    NUMBER_LIT = 289               /* NUMBER_LIT  */
+    ELSE = 263,                    /* ELSE  */
+    RETURN = 264,                  /* RETURN  */
+    THROW = 265,                   /* THROW  */
+    NEW = 266,                     /* NEW  */
+    TRUE_LIT = 267,                /* TRUE_LIT  */
+    FALSE_LIT = 268,               /* FALSE_LIT  */
+    NULL_LIT = 269,                /* NULL_LIT  */
+    ARROW = 270,                   /* ARROW  */
+    OR = 271,                      /* OR  */
+    AND = 272,                     /* AND  */
+    NOT = 273,                     /* NOT  */
+    ASSIGN = 274,                  /* ASSIGN  */
+    SEMICOLON = 275,               /* SEMICOLON  */
+    COLON = 276,                   /* COLON  */
+    COMMA = 277,                   /* COMMA  */
+    DOT = 278,                     /* DOT  */
+    LPAREN = 279,                  /* LPAREN  */
+    RPAREN = 280,                  /* RPAREN  */
+    LBRACE = 281,                  /* LBRACE  */
+    RBRACE = 282,                  /* RBRACE  */
+    LBRACKET = 283,                /* LBRACKET  */
+    RBRACKET = 284,                /* RBRACKET  */
+    IDENTIFIER = 285,              /* IDENTIFIER  */
+    STRING_LIT = 286,              /* STRING_LIT  */
+    NUMBER_LIT = 287,              /* NUMBER_LIT  */
+    EQ = 288,                      /* EQ  */
+    NEQ = 289,                     /* NEQ  */
+    LT = 290,                      /* LT  */
+    GT = 291,                      /* GT  */
+    LE = 292,                      /* LE  */
+    GE = 293,                      /* GE  */
+    ADDOP = 294,                   /* ADDOP  */
+    MULOP = 295,                   /* MULOP  */
+    ASSIGN_OP = 296,               /* ASSIGN_OP  */
+    LOWER_THAN_ELSE = 297          /* LOWER_THAN_ELSE  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -94,10 +102,10 @@ extern int yydebug;
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 union YYSTYPE
 {
-#line 85 "parser.y"
- char *str; 
+#line 117 "parser.y"
+ char *str; struct Node *node; struct NodeList *list; 
 
-#line 101 "parser.tab.h"
+#line 109 "parser.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;
